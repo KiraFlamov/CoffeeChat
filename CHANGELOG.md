@@ -9,3 +9,4 @@
 - Каркас монорепозитория: модуль Go `server/`, рабочее пространство pnpm (`web`, `packages/crypto`, `packages/proto`), команды `task lint`, `task test`, `task fmt`.
 - Линтеры и форматирование: golangci-lint, ESLint, Prettier.
 - Контракт `proto/coffeechat/v1`: сервис `SystemService.Ping` и кадры WebSocket `Echo`; команда `task proto` генерирует код Go (`server/gen`) и TypeScript (`packages/proto/gen`); `buf lint` входит в `task lint`.
+- Сервер: порты `Store` и `Transport`, ядро `core.System` (`Ping`, `OnConnect`, `OnDisconnect`, `OnMessage`) с unit-тестами.
