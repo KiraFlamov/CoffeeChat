@@ -59,6 +59,35 @@ tasks:
     cmds:
       - pnpm -r run test
 
+  db:up:
+    desc: Запустить локальную базу YDB в Docker
+    preconditions:
+      - sh: docker info
+        msg: Docker не запущен. Запусти Docker Desktop и повтори команду.
+    cmds:
+      - docker compose -f deploy/docker-compose.yml up -d
+
+  db:down:
+    desc: Остановить локальную базу (данные в памяти пропадут)
+    cmds:
+      - docker compose -f deploy/docker-compose.yml down
+
+  migrate:
+    desc: Применить миграции к базе из YDB_DSN (по умолчанию локальная); ждёт готовности базы до 60 с
+    dir: server
+    cmds:
+      - go run ./cmd/admin migrate
+
+  test:store:
+    desc: Контрактные тесты адаптера YDB на локальной базе (нужен Docker)
+    dir: server
+    env:
+      YDB_DSN: grpc://localhost:2136/local
+    cmds:
+      - task: db:up
+      - task: migrate
+      - go test -count=1 ./internal/store/...
+
   fmt:
     desc: Отформатировать код
     cmds:

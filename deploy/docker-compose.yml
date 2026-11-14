@@ -1,0 +1,21 @@
+# Локальный стенд разработки. Запуск: task db:up, остановка: task db:down.
+name: coffeechat
+
+services:
+  # YDB в одном контейнере. Строка подключения: grpc://localhost:2136/local
+  # Веб-интерфейс базы: http://localhost:8765
+  ydb:
+    # Версия зафиксирована: на ней проверены миграции и контрактные тесты.
+    image: ydbplatform/local-ydb:26.2.1.16
+    platform: linux/amd64
+    # Имя узла обязательно localhost: база сообщает клиенту свой адрес по этому имени.
+    hostname: localhost
+    ports:
+      - '2136:2136'
+      - '8765:8765'
+    environment:
+      GRPC_PORT: '2136'
+      MON_PORT: '8765'
+      # Данные только в памяти: после перезапуска контейнера база пустая,
+      # миграции применяются заново (task migrate).
+      YDB_USE_IN_MEMORY_PDISKS: '1'
