@@ -11,7 +11,7 @@ tasks:
 
   lint:
     desc: Линтеры Go и TypeScript, проверка форматирования
-    deps: [lint:go, lint:ts]
+    deps: [lint:go, lint:ts, lint:proto]
 
   lint:go:
     desc: golangci-lint для server/
@@ -25,6 +25,18 @@ tasks:
       - pnpm exec eslint .
       - pnpm exec prettier --check .
       - pnpm -r run typecheck
+
+  lint:proto:
+    desc: buf lint и проверка форматирования схем в proto/
+    cmds:
+      - pnpm exec buf lint
+      - pnpm exec buf format --diff --exit-code
+
+  proto:
+    desc: Сгенерировать код Go и TypeScript из proto/
+    cmds:
+      - pnpm exec buf lint
+      - pnpm exec buf generate
 
   test:
     desc: Все тесты (Go и TypeScript)
@@ -53,3 +65,4 @@ tasks:
       - cmd: golangci-lint fmt ./...
         dir: server
       - pnpm exec prettier --write .
+      - pnpm exec buf format --write

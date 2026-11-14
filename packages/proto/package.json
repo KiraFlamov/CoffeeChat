@@ -2,5 +2,14 @@
   "name": "@coffeechat/proto",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    "./*": "./gen/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.17.0"
+  }
 }
