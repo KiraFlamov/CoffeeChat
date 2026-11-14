@@ -1,0 +1,55 @@
+# Команды проекта. Запуск: task <имя>. Список: task --list
+# Task выбран вместо make: одинаково работает на Windows и в Linux без дополнительной оболочки.
+version: '3'
+
+tasks:
+  default:
+    desc: Показать список команд
+    cmds:
+      - task --list
+    silent: true
+
+  lint:
+    desc: Линтеры Go и TypeScript, проверка форматирования
+    deps: [lint:go, lint:ts]
+
+  lint:go:
+    desc: golangci-lint для server/
+    dir: server
+    cmds:
+      - golangci-lint run ./...
+
+  lint:ts:
+    desc: ESLint, Prettier и проверка типов
+    cmds:
+      - pnpm exec eslint .
+      - pnpm exec prettier --check .
+      - pnpm -r run typecheck
+
+  test:
+    desc: Все тесты (Go и TypeScript)
+    deps: [test:go, test:ts]
+
+  test:go:
+    desc: Тесты Go
+    dir: server
+    cmds:
+      - go test ./...
+
+  test:go:race:
+    desc: Тесты Go с детектором гонок (нужен компилятор C; запускается в CI)
+    dir: server
+    cmds:
+      - go test -race ./...
+
+  test:ts:
+    desc: Тесты TypeScript
+    cmds:
+      - pnpm -r run test
+
+  fmt:
+    desc: Отформатировать код
+    cmds:
+      - cmd: golangci-lint fmt ./...
+        dir: server
+      - pnpm exec prettier --write .

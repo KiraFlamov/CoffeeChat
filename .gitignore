@@ -1,4 +1,34 @@
+# Внутренняя документация и инструкции — не публикуются (решение автора)
 docs/
 
 CLAUDE.md
 CONTEXT.md
+
+# ключи и секреты — никогда не коммитить
+.secrets/
+.env
+.env.*
+!.env.example
+
+# одноразовый код разведки (Т1)
+spike/
+
+# зависимости и сборка
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+server/bin/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# редакторы и ОС
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
