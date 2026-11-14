@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package coffeechat.v1;
+
+// Кадр от клиента к серверу. Один двоичный кадр WebSocket = один ClientFrame.
+message ClientFrame {
+  // Номера 2–14 оставлены под кадры следующих этапов.
+  oneof payload {
+    Echo echo = 1;
+  }
+}
+
+// Кадр от сервера к клиенту.
+message ServerFrame {
+  oneof payload {
+    Echo echo = 1;
+    Error error = 15;
+  }
+}
+
+// Проверочный кадр: сервер возвращает его клиенту без изменений.
+message Echo {
+  // Случайные байты клиента, до 32 байт.
+  bytes nonce = 1;
+  // false: сервер отвечает телом HTTP-ответа на событие шлюза.
+  // true: сервер отвечает через Transport.Send (Send API шлюза), тело ответа пустое.
+  bool via_send_api = 2;
+}
+
+// Ошибка обработки кадра. Соединение при этом не рвётся.
+message Error {
+  // Машинный код: "bad_frame", "too_large", "internal".
+  string code = 1;
+  // Текст для разработчика, без данных пользователя.
+  string message = 2;
+}

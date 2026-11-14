@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package coffeechat.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Служебный сервис. Остаётся в проекте как проверка живости.
+service SystemService {
+  // Ping проверяет путь: клиент → шлюз → сервер → база → обратно.
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message PingRequest {
+  // Случайные байты клиента, до 32 байт. Сервер возвращает их без изменений.
+  bytes nonce = 1;
+}
+
+message PingResponse {
+  // Тот же nonce, что в запросе.
+  bytes nonce = 1;
+  // Короткий хэш коммита сборки.
+  string version = 2;
+  // Время сервера.
+  google.protobuf.Timestamp server_time = 3;
+  // База ответила на Store.Ping.
+  bool store_ok = 4;
+}

@@ -1,0 +1,21 @@
+# Генерация кода из proto/. Запуск: task proto.
+# Плагины локальные, версии зафиксированы: Go — в server/go.mod (директивы tool),
+# TypeScript — в package.json. Сеть при генерации не нужна.
+version: v2
+clean: true
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: git.sourcecraft.dev/drflamov/coffeechat/server/gen
+plugins:
+  - local: [go, -C, server, tool, protoc-gen-go]
+    out: server/gen
+    opt: paths=source_relative
+  - local: [go, -C, server, tool, protoc-gen-connect-go]
+    out: server/gen
+    opt: paths=source_relative
+  # protobuf-es версии 2 генерирует и сообщения, и описания сервисов для connect-es.
+  - local: protoc-gen-es
+    out: packages/proto/gen
+    opt: target=ts
