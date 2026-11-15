@@ -9,6 +9,8 @@ CONTEXT.md
 .env
 .env.*
 !.env.example
+# адреса локального стенда, секретов нет
+!web/.env.development
 
 # одноразовый код разведки (Т1)
 spike/

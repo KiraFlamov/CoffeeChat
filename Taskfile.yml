@@ -79,17 +79,31 @@ tasks:
       - go run ./cmd/admin migrate
 
   dev:
-    desc: Локальный стенд — база, миграции и сервер на http://localhost:8080 (нужен Docker; остановка — Ctrl+C)
+    desc: Локальный стенд — база, миграции, сервер и страница http://localhost:5173 (нужен Docker; остановка — Ctrl+C)
     cmds:
       - task: db:up
       - task: migrate
-      - task: dev:server
+      - task: dev:run
+
+  dev:run:
+    desc: Сервер и Vite одновременно (база уже запущена и миграции применены)
+    deps: [dev:server, dev:web]
 
   dev:server:
     desc: Только локальный сервер (база уже запущена и миграции применены)
     dir: server
     cmds:
       - go run ./cmd/server
+
+  dev:web:
+    desc: Только Vite — страница http://localhost:5173
+    cmds:
+      - pnpm --filter @coffeechat/web run dev
+
+  build:web:
+    desc: Собрать фронтенд в web/dist (нужны переменные VITE_API_URL и VITE_WS_URL)
+    cmds:
+      - pnpm --filter @coffeechat/web run build
 
   test:store:
     desc: Контрактные тесты адаптера YDB на локальной базе (нужен Docker)
