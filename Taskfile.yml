@@ -78,6 +78,19 @@ tasks:
     cmds:
       - go run ./cmd/admin migrate
 
+  dev:
+    desc: Локальный стенд — база, миграции и сервер на http://localhost:8080 (нужен Docker; остановка — Ctrl+C)
+    cmds:
+      - task: db:up
+      - task: migrate
+      - task: dev:server
+
+  dev:server:
+    desc: Только локальный сервер (база уже запущена и миграции применены)
+    dir: server
+    cmds:
+      - go run ./cmd/server
+
   test:store:
     desc: Контрактные тесты адаптера YDB на локальной базе (нужен Docker)
     dir: server

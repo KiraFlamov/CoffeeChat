@@ -20,10 +20,9 @@ const (
 	// defaultDSN — локальная база из deploy/docker-compose.yml.
 	defaultDSN = "grpc://localhost:2136/local"
 	// База в контейнере стартует не мгновенно: ждём её готовности с повторами.
-	readyTimeout  = 60 * time.Second
-	retryInterval = 2 * time.Second
-	// Срок одной попытки: подключение и запрос к ещё не готовой базе могут зависнуть.
-	attemptTimeout = 10 * time.Second
+	readyTimeout = 60 * time.Second
+	// closeTimeout — срок закрытия подключения к базе.
+	closeTimeout = 10 * time.Second
 )
 
 func main() {
@@ -51,12 +50,14 @@ func migrate(ctx context.Context, dsn string) error {
 	ctx, cancel := context.WithTimeout(ctx, readyTimeout)
 	defer cancel()
 
-	store, err := openWhenReady(ctx, dsn)
+	store, err := ydb.OpenWhenReady(ctx, dsn, func() {
+		fmt.Fprintln(os.Stderr, "база ещё не готова, повторяю попытку")
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("база не ответила за %s (запущена ли она? task db:up): %w", readyTimeout, err)
 	}
 	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), attemptTimeout)
+		closeCtx, cancel := context.WithTimeout(context.Background(), closeTimeout)
 		defer cancel()
 		_ = store.Close(closeCtx)
 	}()
@@ -67,34 +68,4 @@ func migrate(ctx context.Context, dsn string) error {
 	}
 	fmt.Printf("миграции применены, версия схемы: %d\n", version)
 	return nil
-}
-
-// openWhenReady подключается к базе и ждёт, пока она начнёт отвечать.
-func openWhenReady(ctx context.Context, dsn string) (*ydb.Store, error) {
-	for {
-		store, err := tryOpen(ctx, dsn)
-		if err == nil {
-			return store, nil
-		}
-		fmt.Fprintln(os.Stderr, "база ещё не готова, повтор через", retryInterval)
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("база не ответила за %s (запущена ли она? task db:up): %w", readyTimeout, err)
-		case <-time.After(retryInterval):
-		}
-	}
-}
-
-func tryOpen(ctx context.Context, dsn string) (*ydb.Store, error) {
-	ctx, cancel := context.WithTimeout(ctx, attemptTimeout)
-	defer cancel()
-	store, err := ydb.Open(ctx, dsn)
-	if err != nil {
-		return nil, err
-	}
-	if err := store.Ping(ctx); err != nil {
-		_ = store.Close(ctx)
-		return nil, err
-	}
-	return store, nil
 }

@@ -4,6 +4,7 @@ go 1.27
 
 require (
 	connectrpc.com/connect v1.21.1
+	github.com/coder/websocket v1.8.15
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/ydb-platform/ydb-go-sdk/v3 v3.157.0
 	google.golang.org/protobuf v1.36.12
