@@ -7,6 +7,8 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/ydb-platform/ydb-go-sdk/v3 v3.157.0
+	github.com/ydb-platform/ydb-go-yc-metadata v0.6.2
+	golang.org/x/crypto/x509roots/fallback v0.0.0-20261113174652-9ccaac6145fb
 	google.golang.org/protobuf v1.36.12
 )
 

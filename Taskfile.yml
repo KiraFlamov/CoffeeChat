@@ -14,10 +14,23 @@ tasks:
     deps: [lint:go, lint:ts, lint:proto]
 
   lint:go:
+    desc: golangci-lint для server/ и deploy/image/
+    cmds:
+      # По очереди: golangci-lint не разрешает два своих запуска одновременно.
+      - task: lint:server
+      - task: lint:image
+
+  lint:server:
     desc: golangci-lint для server/
     dir: server
     cmds:
       - golangci-lint run ./...
+
+  lint:image:
+    desc: golangci-lint для сборщика образа deploy/image/
+    dir: deploy/image
+    cmds:
+      - golangci-lint run --config ../../server/.golangci.yml ./...
 
   lint:ts:
     desc: ESLint, Prettier и проверка типов
@@ -40,11 +53,17 @@ tasks:
 
   test:
     desc: Все тесты (Go и TypeScript)
-    deps: [test:go, test:ts]
+    deps: [test:go, test:image, test:ts]
 
   test:go:
     desc: Тесты Go
     dir: server
+    cmds:
+      - go test ./...
+
+  test:image:
+    desc: Тесты сборщика образа
+    dir: deploy/image
     cmds:
       - go test ./...
 
@@ -105,6 +124,38 @@ tasks:
     cmds:
       - pnpm --filter @coffeechat/web run build
 
+  image:
+    desc: Собрать образ контейнера сервера в server/bin/coffeechat-image.tar (Docker не нужен)
+    vars:
+      COMMIT:
+        sh: git rev-parse --short HEAD
+    cmds:
+      - task: image:binary
+        vars: { COMMIT: '{{.COMMIT}}' }
+      - task: image:pack
+        vars: { COMMIT: '{{.COMMIT}}' }
+
+  image:binary:
+    desc: Статический бинарник сервера для linux/amd64 в server/bin/container
+    internal: true
+    dir: server
+    env:
+      CGO_ENABLED: '0'
+      GOOS: linux
+      GOARCH: amd64
+    cmds:
+      - >-
+        go build -trimpath
+        -ldflags "-s -w -X git.sourcecraft.dev/drflamov/coffeechat/server/internal/version.commit={{.COMMIT}}"
+        -o bin/container ./cmd/container
+
+  image:pack:
+    desc: Упаковать бинарник в образ
+    internal: true
+    dir: deploy/image
+    cmds:
+      - go run . -binary ../../server/bin/container -out ../../server/bin/coffeechat-image.tar -tag coffeechat:{{.COMMIT}}
+
   test:store:
     desc: Контрактные тесты адаптера YDB на локальной базе (нужен Docker)
     dir: server
@@ -120,5 +171,7 @@ tasks:
     cmds:
       - cmd: golangci-lint fmt ./...
         dir: server
+      - cmd: golangci-lint fmt --config ../../server/.golangci.yml ./...
+        dir: deploy/image
       - pnpm exec prettier --write .
       - pnpm exec buf format --write

@@ -15,3 +15,5 @@
 - Веб-клиент `web/`: Vite, React, Tailwind; страница «Состояние системы» с пятью проверками (HTTP API, база, WebSocket двумя способами, воркеры) и кнопкой «Повторить». Адреса API задаются переменными сборки `VITE_API_URL` и `VITE_WS_URL`.
 - `packages/crypto`: Web Worker с заглушкой, вызов через Comlink. Пустой Service Worker для проверки регистрации.
 - `task dev` запускает ещё и Vite; добавлены `task dev:web` и `task build:web`.
+- Сервер для облака `cmd/container`: HTTP API и события WebSocket от API Gateway (`CONNECT`, `MESSAGE`, `DISCONNECT`); адаптер `transport/yc` отправляет кадры через Send API с IAM-токеном из сервиса метаданных.
+- `task image` собирает образ контейнера без Docker (сборщик `deploy/image`): один статический бинарник со встроенными корневыми сертификатами, 8,8 МБ.
