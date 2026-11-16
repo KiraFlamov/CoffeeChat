@@ -1,3 +1,8 @@
+variable "folder_name" {
+  description = "Имя каталога Yandex Cloud, в котором должен жить стенд. Защита от запуска не в том каталоге."
+  type        = string
+}
+
 variable "web_bucket" {
   description = "Имя бакета фронтенда. От него зависит адрес сайта и разрешённый origin в CORS."
   type        = string

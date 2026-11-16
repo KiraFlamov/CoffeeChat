@@ -40,16 +40,14 @@ variable "image_tag" {
 module "stand" {
   source = "../../modules/stand"
 
+  folder_name         = "prod"
   web_bucket          = "coffeechat"
   image_tag           = var.image_tag
   deletion_protection = true
 }
 
-# Бакет фронтенда создан вручную до Terraform: берём его под управление, а не создаём.
-import {
-  to = module.stand.yandex_storage_bucket.web
-  id = "coffeechat"
-}
+# Бакет фронтенда создаёт Terraform. Вручную созданный бакет с этим именем лежал
+# в каталоге staging; 16.11.2026 он пересоздан в каталоге prod.
 
 output "api_url" {
   value = module.stand.api_url

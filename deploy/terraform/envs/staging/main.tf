@@ -40,6 +40,7 @@ variable "image_tag" {
 module "stand" {
   source = "../../modules/stand"
 
+  folder_name         = "staging"
   web_bucket          = "coffeechat-staging"
   image_tag           = var.image_tag
   deletion_protection = false

@@ -3,8 +3,21 @@
 
 data "yandex_client_config" "this" {}
 
+# Защита от ошибки в .secrets/<стенд>.env: если YC_FOLDER_ID указывает на чужой каталог,
+# план останавливается здесь и ничего не создаёт.
+data "yandex_resourcemanager_folder" "this" {
+  folder_id = data.yandex_client_config.this.folder_id
+
+  lifecycle {
+    postcondition {
+      condition     = self.name == var.folder_name
+      error_message = "Стенд должен разворачиваться в каталоге «${var.folder_name}», а YC_FOLDER_ID указывает на каталог «${self.name}». Проверь файл .secrets/<стенд>.env."
+    }
+  }
+}
+
 locals {
-  folder_id  = data.yandex_client_config.this.folder_id
+  folder_id  = data.yandex_resourcemanager_folder.this.id
   name       = "coffeechat"
   web_origin = "https://${var.web_bucket}.website.yandexcloud.net"
   # Контейнер и шлюз создаются, только когда в реестре уже есть образ.
@@ -14,15 +27,18 @@ locals {
 
 # --- Сервисные аккаунты ---------------------------------------------------
 
+# Имя сервисного аккаунта должно быть уникальным во всём облаке, а не в каталоге,
+# поэтому в имени есть стенд.
+
 # От его имени работает сервер: ходит в базу, в Send API и скачивает свой образ.
 resource "yandex_iam_service_account" "app" {
-  name        = "sa-app"
+  name        = "sa-app-${var.folder_name}"
   description = "Сервер coffeechat в Serverless Containers"
 }
 
 # От его имени шлюз вызывает контейнер. Других прав у него нет.
 resource "yandex_iam_service_account" "gateway" {
-  name        = "sa-gateway"
+  name        = "sa-gateway-${var.folder_name}"
   description = "API Gateway coffeechat: вызов контейнера"
 }
 
