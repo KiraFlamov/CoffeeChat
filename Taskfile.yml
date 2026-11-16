@@ -156,6 +156,119 @@ tasks:
     cmds:
       - go run . -binary ../../server/bin/container -out ../../server/bin/coffeechat-image.tar -tag coffeechat:{{.COMMIT}}
 
+  # --- Облако. Все команды требуют имя стенда: ENV=staging или ENV=prod. ---
+  # Нужны terraform, yc и файл .secrets/<стенд>.env (см. deploy/README.md).
+
+  deploy:
+    desc: 'Выкатить стенд целиком: task deploy ENV=staging (APPROVE=-auto-approve — не спрашивать подтверждение)'
+    requires:
+      vars: [ENV]
+    vars:
+      COMMIT:
+        sh: git rev-parse --short HEAD
+    cmds:
+      - task: tf
+        vars: { ARGS: 'init -input=false' }
+      # Первый проход — с тегом образа, который уже развёрнут (при первом деплое тега нет:
+      # создаётся всё, кроме контейнера и шлюза). Так появляются реестр и база,
+      # а работающий контейнер не меняется.
+      - task: tf
+        vars:
+          ARGS: >-
+            apply -input=false {{.APPROVE}}
+            -var "image_tag=$(terraform output -raw image_tag 2>/dev/null || true)"
+      - task: deploy:outputs
+      - task: image
+      - task: image:push
+        vars: { COMMIT: '{{.COMMIT}}' }
+      - task: migrate:cloud
+      # Второй проход — контейнер с новым образом и шлюз.
+      - task: tf
+        vars: { ARGS: 'apply -input=false {{.APPROVE}} -var image_tag={{.COMMIT}}' }
+      - task: deploy:outputs
+      - task: deploy-web
+      - task: smoke
+
+  tf:
+    desc: 'Terraform для стенда: task tf ENV=staging -- plan'
+    requires:
+      vars: [ENV]
+    dir: deploy/terraform/envs/{{.ENV}}
+    dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.env']
+    env:
+      YC_TOKEN:
+        sh: yc iam create-token
+    cmds:
+      - terraform {{.ARGS | default .CLI_ARGS}}
+
+  deploy:outputs:
+    desc: Записать адреса стенда из Terraform в файлы для остальных команд
+    requires:
+      vars: [ENV]
+    dir: deploy/terraform/envs/{{.ENV}}
+    dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.env']
+    env:
+      YC_TOKEN:
+        sh: yc iam create-token
+    cmds:
+      - terraform output -raw deploy_env > ../../../../.secrets/{{.ENV}}.outputs.env
+      - terraform output -raw web_env > ../../../../web/.env.{{.ENV}}.local
+      # Пустой файл значит, что Terraform ещё не применялся целиком.
+      - cmd: test -s ../../../../.secrets/{{.ENV}}.outputs.env
+        silent: true
+
+  image:push:
+    desc: Отправить образ сервера в реестр стенда (сначала task image)
+    requires:
+      vars: [ENV, COMMIT]
+    dir: deploy/image
+    dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.outputs.env']
+    env:
+      YC_TOKEN:
+        sh: yc iam create-token
+    cmds:
+      - go run . -binary ../../server/bin/container -push "$IMAGE_REPOSITORY:{{.COMMIT}}"
+
+  migrate:cloud:
+    desc: 'Применить миграции к базе стенда: task migrate:cloud ENV=staging'
+    requires:
+      vars: [ENV]
+    dir: server
+    dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.outputs.env']
+    env:
+      YDB_ACCESS_TOKEN:
+        sh: yc iam create-token
+    cmds:
+      - go run ./cmd/admin migrate
+
+  deploy-web:
+    desc: 'Собрать фронтенд с адресами стенда и выгрузить в бакет: task deploy-web ENV=staging'
+    requires:
+      vars: [ENV]
+    dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.outputs.env']
+    cmds:
+      - pnpm --filter @coffeechat/web run build --mode {{.ENV}}
+      - task: web:upload
+
+  web:upload:
+    desc: Выгрузить готовую сборку web/dist в бакет стенда
+    internal: true
+    requires:
+      vars: [ENV]
+    dir: server
+    dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.outputs.env']
+    cmds:
+      - go run ./cmd/webupload -dir ../web/dist -bucket "$WEB_BUCKET"
+
+  smoke:
+    desc: 'Дымовой тест стенда: task smoke ENV=staging'
+    requires:
+      vars: [ENV]
+    dir: server
+    dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.outputs.env']
+    cmds:
+      - go run ./cmd/smoke -api "$API_URL" -ws "$WS_URL" -web "$WEB_URL"
+
   test:store:
     desc: Контрактные тесты адаптера YDB на локальной базе (нужен Docker)
     dir: server

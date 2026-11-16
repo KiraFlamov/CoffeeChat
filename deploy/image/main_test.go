@@ -4,10 +4,14 @@ import (
 	"archive/tar"
 	"errors"
 	"io"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
@@ -100,7 +104,43 @@ func TestRejectsNonLinuxBinary(t *testing.T) {
 }
 
 func TestRequiresAllFlags(t *testing.T) {
-	if err := run([]string{"-binary", "x"}); err == nil {
-		t.Fatal("запуск без -out и -tag прошёл")
+	for _, args := range [][]string{
+		{"-binary", "x"},
+		{"-binary", "x", "-out", "image.tar"},
+		{"-out", "image.tar", "-tag", "coffeechat:test"},
+	} {
+		if err := run(args); err == nil {
+			t.Errorf("запуск с параметрами %v прошёл", args)
+		}
+	}
+}
+
+// Отправка проверяется на реестре в памяти: тот же протокол, что у Container Registry.
+func TestPush(t *testing.T) {
+	srv := httptest.NewServer(registry.New())
+	defer srv.Close()
+	target := srv.Listener.Addr().String() + "/coffeechat:test"
+
+	binary := fakeBinary(t)
+	if err := run([]string{"-binary", binary, "-push", target}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	ref, err := name.NewTag(target)
+	if err != nil {
+		t.Fatalf("NewTag: %v", err)
+	}
+	pushed, err := remote.Image(ref)
+	if err != nil {
+		t.Fatalf("образа нет в реестре: %v", err)
+	}
+	built, err := build(binary)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	want, _ := built.Digest()
+	got, _ := pushed.Digest()
+	if got != want {
+		t.Errorf("хэш в реестре %s, ожидался %s", got, want)
 	}
 }

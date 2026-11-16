@@ -1,0 +1,48 @@
+# Спецификация API Gateway. Это шаблон Terraform: значения в фигурных скобках
+# со знаком доллара подставляет модуль deploy/terraform/modules/stand.
+openapi: 3.0.0
+info:
+  title: coffeechat
+  version: 1.0.0
+
+# CORS: единственный разрешённый origin — адрес фронтенда. На preflight отвечает сам шлюз.
+x-yc-apigateway:
+  cors:
+    origin: '${web_origin}'
+    methods: 'POST'
+    allowedHeaders: 'Content-Type,Connect-Protocol-Version,Connect-Timeout-Ms'
+    maxAge: 7200
+
+paths:
+  # HTTP API (ConnectRPC): все методы сервиса идут в контейнер.
+  /coffeechat.v1.SystemService/{method}:
+    post:
+      operationId: systemService
+      parameters:
+        - in: path
+          name: method
+          required: true
+          schema:
+            type: string
+      x-yc-apigateway-integration:
+        type: serverless_containers
+        container_id: ${container_id}
+        service_account_id: ${gateway_sa_id}
+
+  # WebSocket: шлюз держит соединение сам, а события присылает контейнеру запросами на /ws.
+  /ws:
+    x-yc-apigateway-websocket-connect:
+      x-yc-apigateway-integration:
+        type: serverless_containers
+        container_id: ${container_id}
+        service_account_id: ${gateway_sa_id}
+    x-yc-apigateway-websocket-message:
+      x-yc-apigateway-integration:
+        type: serverless_containers
+        container_id: ${container_id}
+        service_account_id: ${gateway_sa_id}
+    x-yc-apigateway-websocket-disconnect:
+      x-yc-apigateway-integration:
+        type: serverless_containers
+        container_id: ${container_id}
+        service_account_id: ${gateway_sa_id}

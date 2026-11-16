@@ -1,7 +1,8 @@
 // Команда image собирает образ контейнера сервера без Docker: один слой
 // с одним файлом — статическим бинарником /app (ADR-004). Запуск: task image.
 //
-// Образ записывается в файл формата docker save. Его принимают docker load и crane push.
+// Образ записывается в файл формата docker save (-out) и/или отправляется в реестр (-push).
+// Для входа в реестр Yandex Cloud нужен IAM-токен в переменной окружения YC_TOKEN.
 package main
 
 import (
@@ -14,10 +15,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
@@ -39,27 +42,20 @@ func run(args []string) error {
 	flags := flag.NewFlagSet("image", flag.ContinueOnError)
 	binary := flags.String("binary", "", "путь к статическому бинарнику сервера для linux/amd64")
 	out := flags.String("out", "", "куда записать образ (файл .tar)")
-	tag := flags.String("tag", "", "имя образа с тегом, например coffeechat:abc1234")
+	tag := flags.String("tag", "", "имя образа с тегом для файла, например coffeechat:abc1234")
+	push := flags.String("push", "", "куда отправить образ, например cr.yandex/<реестр>/coffeechat:abc1234")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if *binary == "" || *out == "" || *tag == "" {
+	if *binary == "" || (*out == "" && *push == "") || (*out != "" && *tag == "") {
 		flags.Usage()
-		return errors.New("нужны все три параметра: -binary, -out, -tag")
+		return errors.New("нужны -binary и хотя бы одно из двух: -out вместе с -tag или -push")
 	}
 
-	ref, err := name.NewTag(*tag)
-	if err != nil {
-		return fmt.Errorf("имя образа %q: %w", *tag, err)
-	}
 	img, err := build(*binary)
 	if err != nil {
 		return err
 	}
-	if err := tarball.WriteToFile(*out, ref, img); err != nil {
-		return fmt.Errorf("запись образа: %w", err)
-	}
-
 	digest, err := img.Digest()
 	if err != nil {
 		return fmt.Errorf("хэш образа: %w", err)
@@ -68,8 +64,42 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("образ %s записан в %s\nхэш: %s\nразмер в реестре: %.1f МБ\n",
-		*tag, *out, digest, float64(size)/(1<<20))
+
+	if *out != "" {
+		ref, err := name.NewTag(*tag)
+		if err != nil {
+			return fmt.Errorf("имя образа %q: %w", *tag, err)
+		}
+		if err := tarball.WriteToFile(*out, ref, img); err != nil {
+			return fmt.Errorf("запись образа: %w", err)
+		}
+		fmt.Printf("образ %s записан в %s\n", *tag, *out)
+	}
+	if *push != "" {
+		if err := pushImage(*push, img, os.Getenv("YC_TOKEN")); err != nil {
+			return err
+		}
+		fmt.Printf("образ отправлен в %s\n", *push)
+	}
+	fmt.Printf("хэш: %s\nразмер в реестре: %.1f МБ\n", digest, float64(size)/(1<<20))
+	return nil
+}
+
+// pushImage отправляет образ в реестр. token — IAM-токен Yandex Cloud; с пустым
+// токеном отправка идёт без входа (так работает реестр в тестах).
+func pushImage(target string, img v1.Image, token string) error {
+	ref, err := name.NewTag(target)
+	if err != nil {
+		return fmt.Errorf("адрес образа %q: %w", target, err)
+	}
+	auth := authn.Anonymous
+	if token != "" {
+		// Вход в Container Registry по IAM-токену: имя пользователя — iam.
+		auth = authn.FromConfig(authn.AuthConfig{Username: "iam", Password: token})
+	}
+	if err := remote.Write(ref, img, remote.WithAuth(auth)); err != nil {
+		return fmt.Errorf("отправка образа в реестр (есть ли YC_TOKEN и права на реестр?): %w", err)
+	}
 	return nil
 }
 
