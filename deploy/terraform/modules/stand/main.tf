@@ -22,7 +22,9 @@ locals {
   web_origin = "https://${var.web_bucket}.website.yandexcloud.net"
   # Контейнер и шлюз создаются, только когда в реестре уже есть образ.
   deploy_app = var.image_tag != ""
-  image_repo = "cr.yandex/${yandex_container_registry.this.id}/${local.name}"
+  # Шлюз — единственный вход снаружи. Без него контейнер и база на месте, но недоступны.
+  deploy_gateway = local.deploy_app && var.gateway_enabled
+  image_repo     = "cr.yandex/${yandex_container_registry.this.id}/${local.name}"
 }
 
 # --- Сервисные аккаунты ---------------------------------------------------
@@ -146,7 +148,7 @@ resource "yandex_serverless_container_iam_member" "gateway_invoker" {
 # --- Шлюз -----------------------------------------------------------------
 
 resource "yandex_api_gateway" "this" {
-  count = local.deploy_app ? 1 : 0
+  count = local.deploy_gateway ? 1 : 0
 
   name = local.name
   spec = templatefile("${path.module}/../../../gateway.yaml", {

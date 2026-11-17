@@ -37,12 +37,19 @@ variable "image_tag" {
   default     = ""
 }
 
+variable "gateway_enabled" {
+  description = "false — шлюз удаляется (task stop). Включить обратно — task start."
+  type        = bool
+  default     = true
+}
+
 module "stand" {
   source = "../../modules/stand"
 
   folder_name         = "prod"
   web_bucket          = "coffeechat"
   image_tag           = var.image_tag
+  gateway_enabled     = var.gateway_enabled
   deletion_protection = true
 }
 
@@ -59,6 +66,10 @@ output "ws_url" {
 
 output "image_tag" {
   value = module.stand.image_tag
+}
+
+output "gateway_enabled" {
+  value = module.stand.gateway_enabled
 }
 
 output "web_url" {

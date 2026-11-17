@@ -1,22 +1,27 @@
 locals {
-  api_host = local.deploy_app ? yandex_api_gateway.this[0].domain : ""
-  api_url  = local.deploy_app ? "https://${local.api_host}" : ""
-  ws_url   = local.deploy_app ? "wss://${local.api_host}/ws" : ""
+  api_host = local.deploy_gateway ? yandex_api_gateway.this[0].domain : ""
+  api_url  = local.deploy_gateway ? "https://${local.api_host}" : ""
+  ws_url   = local.deploy_gateway ? "wss://${local.api_host}/ws" : ""
 }
 
 output "api_url" {
-  description = "Адрес HTTP API. Пусто, пока контейнер не развёрнут."
+  description = "Адрес HTTP API. Пусто, пока контейнер не развёрнут или шлюз выключен."
   value       = local.api_url
 }
 
 output "ws_url" {
-  description = "Адрес WebSocket. Пусто, пока контейнер не развёрнут."
+  description = "Адрес WebSocket. Пусто, пока контейнер не развёрнут или шлюз выключен."
   value       = local.ws_url
 }
 
 output "image_tag" {
   description = "Тег развёрнутого образа. Команда деплоя читает его, чтобы первый проход не трогал работающий контейнер."
   value       = var.image_tag
+}
+
+output "gateway_enabled" {
+  description = "Включён ли шлюз. Команда деплоя читает это значение, чтобы не включить остановленный стенд."
+  value       = var.gateway_enabled
 }
 
 output "web_url" {

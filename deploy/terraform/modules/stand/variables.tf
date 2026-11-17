@@ -14,6 +14,12 @@ variable "image_tag" {
   default     = ""
 }
 
+variable "gateway_enabled" {
+  description = "false — шлюз удаляется: стенд недоступен снаружи и не тратит деньги на запросы. Рубильник на случай накрутки."
+  type        = bool
+  default     = true
+}
+
 variable "deletion_protection" {
   description = "Защита базы от удаления."
   type        = bool

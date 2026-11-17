@@ -177,14 +177,62 @@ tasks:
           ARGS: >-
             apply -input=false {{.APPROVE}}
             -var "image_tag=$(terraform output -raw image_tag 2>/dev/null || true)"
+            -var "gateway_enabled=$(v=$(terraform output -raw gateway_enabled 2>/dev/null || true); echo "${v:-true}")"
       - task: deploy:outputs
       - task: image
       - task: image:push
         vars: { COMMIT: '{{.COMMIT}}' }
       - task: migrate:cloud
-      # Второй проход — контейнер с новым образом и шлюз.
+      # Второй проход — контейнер с новым образом и шлюз. Остановленный стенд
+      # (task stop) остаётся остановленным: деплой шлюз не включает.
       - task: tf
-        vars: { ARGS: 'apply -input=false {{.APPROVE}} -var image_tag={{.COMMIT}}' }
+        vars:
+          ARGS: >-
+            apply -input=false {{.APPROVE}}
+            -var image_tag={{.COMMIT}}
+            -var "gateway_enabled=$(v=$(terraform output -raw gateway_enabled 2>/dev/null || true); echo "${v:-true}")"
+      - task: deploy:outputs
+      - task: deploy:publish
+
+  deploy:publish:
+    desc: Выложить фронтенд и проверить стенд — если шлюз включён
+    internal: true
+    requires:
+      vars: [ENV]
+    dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.outputs.env']
+    cmds:
+      - |
+        if [ -n "$API_URL" ]; then
+          task deploy-web ENV={{.ENV}} && task smoke ENV={{.ENV}}
+        else
+          echo "Стенд {{.ENV}} остановлен: фронтенд и дымовой тест пропущены. Включить: task start ENV={{.ENV}}"
+        fi
+
+  stop:
+    desc: 'Рубильник: удалить шлюз стенда, чтобы запросы перестали стоить денег: task stop ENV=prod'
+    requires:
+      vars: [ENV]
+    cmds:
+      - task: tf
+        vars:
+          ARGS: >-
+            apply -input=false -auto-approve
+            -var "image_tag=$(terraform output -raw image_tag 2>/dev/null || true)"
+            -var gateway_enabled=false
+      - task: deploy:outputs
+      - echo "Стенд {{.ENV}} остановлен. Контейнер, база и фронтенд на месте. Включить - task start ENV={{.ENV}}"
+
+  start:
+    desc: 'Включить остановленный стенд: task start ENV=prod (адрес API изменится, фронтенд пересоберётся)'
+    requires:
+      vars: [ENV]
+    cmds:
+      - task: tf
+        vars:
+          ARGS: >-
+            apply -input=false -auto-approve
+            -var "image_tag=$(terraform output -raw image_tag 2>/dev/null || true)"
+            -var gateway_enabled=true
       - task: deploy:outputs
       - task: deploy-web
       - task: smoke
