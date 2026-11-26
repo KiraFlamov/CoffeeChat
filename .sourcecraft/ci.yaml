@@ -40,6 +40,10 @@ tokens:
 
 env:
   GITHUB_REPO: KiraFlamov/CoffeeChat
+  # proxy.golang.org (Google) из Yandex Cloud отвечает с перебоями: скачивание модулей
+  # зависало (CI 26.11.2026). Сначала зеркало, при ошибке — официальный прокси, затем
+  # напрямую из репозиториев. Подмену модуля ловит go.sum.
+  GOPROXY: https://goproxy.cn|https://proxy.golang.org|direct
 
 # Общие кубики: подключаются в задания через uses.
 cubes:
