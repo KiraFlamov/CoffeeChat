@@ -19,3 +19,11 @@ services:
       # Данные только в памяти: после перезапуска контейнера база пустая,
       # миграции применяются заново (task migrate).
       YDB_USE_IN_MEMORY_PDISKS: '1'
+    # Та же проверка, что в образе (sh /health_check), но чаще: в образе раз в 15 с.
+    # По ней task db:up ждёт, пока база будет готова создавать таблицы.
+    healthcheck:
+      test: ['CMD-SHELL', 'sh /health_check']
+      interval: 3s
+      timeout: 10s
+      retries: 60
+      start_period: 10s

@@ -97,12 +97,14 @@ tasks:
       - pnpm audit
 
   db:up:
-    desc: Запустить локальную базу YDB в Docker
+    desc: Запустить локальную базу YDB в Docker и дождаться её готовности
     preconditions:
       - sh: docker info
         msg: Docker не запущен. Запусти Docker Desktop и повтори команду.
     cmds:
-      - docker compose -f deploy/docker-compose.yml up -d
+      # --wait ждёт проверки здоровья контейнера: база отвечает на запросы раньше,
+      # чем готова создавать таблицы (ошибка «storage pools» в CI 26.11.2026).
+      - docker compose -f deploy/docker-compose.yml up -d --wait --wait-timeout 180
 
   db:down:
     desc: Остановить локальную базу (данные в памяти пропадут)

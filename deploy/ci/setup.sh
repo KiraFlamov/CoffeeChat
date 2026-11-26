@@ -38,7 +38,9 @@ trap 'rm -rf "$TMP"' EXIT
 
 # fetch URL SHA256 FILE — скачать и сверить контрольную сумму.
 fetch() {
-  curl -fsSL --retry 3 -o "$TMP/$3" "$1"
+  local t=$SECONDS
+  curl -fsSL --retry 3 --connect-timeout 20 -o "$TMP/$3" "$1"
+  echo "скачано $3 за $((SECONDS - t)) с"
   echo "$2  $TMP/$3" | sha256sum -c --quiet -
 }
 
@@ -49,6 +51,7 @@ install_go() {
   $SUDO ln -sf "$PREFIX/go/bin/go" "$PREFIX/go/bin/gofmt" "$BIN/"
   # Компилятор C нужен детектору гонок (go test -race).
   if ! command -v gcc >/dev/null; then
+    echo "gcc нет — ставлю через apt"
     $SUDO apt-get update -qq && $SUDO apt-get install -y -qq gcc
   fi
 }
@@ -105,6 +108,7 @@ install_yc() {
 
 for tool in "$@"; do
   echo "--- установка: $tool"
+  start=$SECONDS
   case "$tool" in
     go) install_go ;;
     node) install_node ;;
@@ -118,6 +122,7 @@ for tool in "$@"; do
       exit 2
       ;;
   esac
+  echo "--- $tool: $((SECONDS - start)) с"
 done
 
 echo "--- версии"
