@@ -36,16 +36,31 @@ if [ ! -w "$PREFIX" ]; then SUDO="sudo"; fi
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-# fetch URL SHA256 FILE — скачать и сверить контрольную сумму.
+# fetch "URL1 URL2 ..." SHA256 FILE — скачать с первого источника, который отдаёт файл
+# быстро и с верной контрольной суммой. Зеркала безопасны: файл сверяется с суммой
+# из официального списка, подменённый не пройдёт.
+# Медленная загрузка обрывается (меньше 300 КБ/с дольше 20 с) — пробуем следующий источник.
 fetch() {
-  local t=$SECONDS
-  curl -fsSL --retry 3 --connect-timeout 20 -o "$TMP/$3" "$1"
-  echo "скачано $3 за $((SECONDS - t)) с"
-  echo "$2  $TMP/$3" | sha256sum -c --quiet -
+  local url t
+  for url in $1; do
+    t=$SECONDS
+    if curl -fsSL --connect-timeout 15 --speed-limit 300000 --speed-time 20 -o "$TMP/$3" "$url" &&
+      echo "$2  $TMP/$3" | sha256sum -c --quiet - 2>/dev/null; then
+      echo "скачано $3 за $((SECONDS - t)) с: $url"
+      return 0
+    fi
+    echo "не вышло за $((SECONDS - t)) с: $url — пробую следующий источник"
+    rm -f "$TMP/$3"
+  done
+  echo "не удалось скачать $3 ни из одного источника" >&2
+  return 1
 }
 
 install_go() {
-  fetch "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" "$GO_SHA256" go.tgz
+  # Сервер go.dev (Google) из Yandex Cloud отдаёт файл очень медленно (CI 26.11.2026),
+  # поэтому сначала зеркало.
+  fetch "https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-amd64.tar.gz
+    https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" "$GO_SHA256" go.tgz
   $SUDO rm -rf "$PREFIX/go"
   $SUDO tar -C "$PREFIX" -xzf "$TMP/go.tgz"
   $SUDO ln -sf "$PREFIX/go/bin/go" "$PREFIX/go/bin/gofmt" "$BIN/"
@@ -57,7 +72,8 @@ install_go() {
 }
 
 install_node() {
-  fetch "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" "$NODE_SHA256" node.txz
+  fetch "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz
+    https://cdn.npmmirror.com/binaries/node/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" "$NODE_SHA256" node.txz
   $SUDO tar -C "$PREFIX" --strip-components=1 -xJf "$TMP/node.txz" \
     "node-v${NODE_VERSION}-linux-x64/bin" "node-v${NODE_VERSION}-linux-x64/lib"
   $SUDO npm install -g --silent "pnpm@${PNPM_VERSION}"
