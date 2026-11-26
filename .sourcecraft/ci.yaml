@@ -34,6 +34,9 @@ tokens:
   staging:
     service_connection: coffeechat-staging
     scope: ref
+  # Деплой prod идёт от тега, а ограничить подключение тегами SourceCraft не даёт.
+  # Поэтому подключение prod — на весь репозиторий без ограничения ветки (scope: repo,
+  # решение автора 26.11.2026). Пускает на prod только кубик check-ref: тег v* из main.
   prod:
     service_connection: coffeechat-prod
     scope: repo
