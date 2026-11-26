@@ -28,9 +28,12 @@ on:
 
 tokens:
   # Имена подключений — как в настройках репозитория SourceCraft.
+  # scope должен совпадать с областью подключения: подключение staging ограничено
+  # веткой main, поэтому токен запрашивается для ветки (ref), а не для всего репозитория.
+  # С scope: repo федерация отвечает 401 «No matching federated credentials» (CI 26.11.2026).
   staging:
     service_connection: coffeechat-staging
-    scope: repo
+    scope: ref
   prod:
     service_connection: coffeechat-prod
     scope: repo
