@@ -1,0 +1,202 @@
+# CI/CD в SourceCraft. Справочник формата: https://sourcecraft.dev/portal/docs/ru/sourcecraft/ci-cd-ref/
+#
+# - pull request в main  → checks: линтеры, тесты, сборка, проверки безопасности;
+# - push в main          → staging: те же проверки, деплой на staging, зеркало на GitHub;
+# - тег v*               → prod: проверка «коммит тега есть в main», деплой на prod, тег на GitHub.
+#
+# Вход в Yandex Cloud — через сервисные подключения SourceCraft (короткий IAM-токен
+# для sa-deploy-<стенд>), долгоживущих ключей сервисных аккаунтов в секретах нет.
+# Секреты CI и настройка подключений — deploy/README.md, раздел «CI».
+#
+# Очереди запусков в CI SourceCraft нет: два деплоя одного стенда подряд могут
+# пересечься, а блокировки state Terraform нет. Не сливать следующий PR и не ставить
+# следующий тег, пока не закончился деплой предыдущего.
+
+on:
+  pull_request:
+    - workflows: [checks]
+      filter:
+        target_branches: [main]
+  push:
+    - workflows: [staging]
+      filter:
+        branches: [main]
+    # Тег нельзя указать в одном фильтре с веткой — отдельное событие.
+    - workflows: [prod]
+      filter:
+        tags: ['v*']
+
+tokens:
+  # Имена подключений — как в настройках репозитория SourceCraft.
+  staging:
+    service_connection: coffeechat-staging
+    scope: repo
+  prod:
+    service_connection: coffeechat-prod
+    scope: repo
+
+env:
+  GITHUB_REPO: KiraFlamov/CoffeeChat
+
+# Общие кубики: подключаются в задания через uses.
+cubes:
+  - name: ci-setup
+    script:
+      - bash deploy/ci/setup.sh go node task golangci-lint gitleaks
+      - pnpm install --frozen-lockfile
+
+  - name: ci-gitleaks
+    script:
+      # Полная история нужна и gitleaks, и buf breaking.
+      - if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then git fetch --quiet --unshallow --no-tags origin; fi
+      - gitleaks git --redact --no-banner .
+
+  - name: ci-lint
+    script:
+      - task lint
+
+  - name: ci-buf-breaking
+    script:
+      # Сравнение с базой: при pull request — точка ответвления, при push — прошлый коммит ветки.
+      - |
+        if [ -z "${SOURCECRAFT_BASE_SHA:-}" ]; then
+          echo "нет SOURCECRAFT_BASE_SHA (ручной запуск) — buf breaking пропущен"
+        else
+          pnpm exec buf breaking --against ".git#ref=$SOURCECRAFT_BASE_SHA"
+        fi
+
+  - name: ci-test
+    script:
+      - task test:cover
+      - task test:image
+
+  - name: ci-test-store
+    script:
+      # Контрактные тесты адаптера YDB на local-ydb в Docker.
+      - task test:store
+
+  - name: ci-build
+    env:
+      # Адреса-заглушки: проверяется только то, что сборка проходит.
+      VITE_API_URL: https://api.invalid
+      VITE_WS_URL: wss://api.invalid/ws
+    script:
+      - task build:web
+      - bash deploy/ci/web-report.sh проверка
+      - task image
+      - ls -l server/bin/coffeechat-image.tar
+
+workflows:
+  checks:
+    settings:
+      max_cube_duration: 20m
+    tasks:
+      - name: checks
+        cubes:
+          - name: setup
+            uses: ci-setup
+          - name: gitleaks
+            uses: ci-gitleaks
+          - name: lint
+            uses: ci-lint
+          - name: buf-breaking
+            uses: ci-buf-breaking
+          - name: test
+            uses: ci-test
+          - name: test-store
+            uses: ci-test-store
+          - name: build
+            uses: ci-build
+          # Уязвимости в зависимостях: на этапе 0 сборку не блокируют.
+          - name: audit
+            allow_failure: true
+            script:
+              - task audit
+
+  staging:
+    settings:
+      max_cube_duration: 20m
+    tasks:
+      - name: deploy-staging
+        cubes:
+          # Сначала проверка ветки: чужой запуск не тратит минуты на установку.
+          - name: check-ref
+            script:
+              - bash deploy/ci/check-ref.sh main
+          - name: setup
+            uses: ci-setup
+          - name: setup-deploy
+            script:
+              - bash deploy/ci/setup.sh terraform yc
+          - name: gitleaks
+            uses: ci-gitleaks
+          - name: lint
+            uses: ci-lint
+          - name: buf-breaking
+            uses: ci-buf-breaking
+          - name: test
+            uses: ci-test
+          - name: test-store
+            uses: ci-test-store
+          # Обмен токена SourceCraft на IAM-токен sa-deploy-staging (действует 12 ч).
+          - name: get_iam_token
+            image: cr.yandex/sourcecraft/yc-iam:latest
+            env:
+              ID_TOKEN: ${{ tokens.staging.id_token }}
+              YC_SA_ID: ${{ tokens.staging.service_account_id }}
+          - name: deploy
+            env:
+              YC_IAM_TOKEN: ${{ cubes.get_iam_token.outputs.IAM_TOKEN }}
+              YC_CLOUD_ID: ${{ tokens.staging.cloud_id }}
+              YC_FOLDER_ID: ${{ tokens.staging.folder_id }}
+              AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_TFSTATE_KEY_ID }}
+              AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_TFSTATE_SECRET }}
+            script:
+              - bash deploy/ci/stand-env.sh staging
+              - yc config profile create ci >/dev/null 2>&1 || true
+              # Terraform, образ, миграции, фронтенд, дымовой тест (deploy/README.md).
+              - task deploy ENV=staging APPROVE=-auto-approve
+              - bash deploy/ci/web-report.sh staging
+          - name: mirror
+            env:
+              GITHUB_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+            script:
+              - bash deploy/ci/mirror.sh main
+
+  prod:
+    settings:
+      max_cube_duration: 20m
+    tasks:
+      - name: deploy-prod
+        cubes:
+          # Тег v* и коммит из main — иначе деплой отклоняется.
+          # Проверки кода не повторяются: этот коммит уже прошёл их при деплое на staging.
+          - name: check-ref
+            script:
+              - bash deploy/ci/check-ref.sh tag
+          - name: setup
+            script:
+              - bash deploy/ci/setup.sh go node task terraform yc
+              - pnpm install --frozen-lockfile
+          - name: get_iam_token
+            image: cr.yandex/sourcecraft/yc-iam:latest
+            env:
+              ID_TOKEN: ${{ tokens.prod.id_token }}
+              YC_SA_ID: ${{ tokens.prod.service_account_id }}
+          - name: deploy
+            env:
+              YC_IAM_TOKEN: ${{ cubes.get_iam_token.outputs.IAM_TOKEN }}
+              YC_CLOUD_ID: ${{ tokens.prod.cloud_id }}
+              YC_FOLDER_ID: ${{ tokens.prod.folder_id }}
+              AWS_ACCESS_KEY_ID: ${{ secrets.PROD_TFSTATE_KEY_ID }}
+              AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_TFSTATE_SECRET }}
+            script:
+              - bash deploy/ci/stand-env.sh prod
+              - yc config profile create ci >/dev/null 2>&1 || true
+              - task deploy ENV=prod APPROVE=-auto-approve
+              - bash deploy/ci/web-report.sh prod
+          - name: mirror
+            env:
+              GITHUB_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+            script:
+              - bash deploy/ci/mirror.sh tag

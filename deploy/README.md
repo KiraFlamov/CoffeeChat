@@ -138,4 +138,69 @@ task start ENV=prod    # включить обратно
 - Адреса стенда после деплоя лежат в `.secrets/<стенд>.outputs.env`; их же показывает `task tf ENV=staging -- output`.
 - Бакет `coffeechat-staging` создан вручную, поэтому Terraform его не создаёт, а берёт под управление (блок `import`). Бакет `coffeechat` для `prod` создаёт сам Terraform.
 - Terraform проверяет, что каталог из `.secrets/<стенд>.env` называется так же, как стенд, и иначе останавливается: перепутанный `YC_FOLDER_ID` ничего не создаст.
-- Одновременно два деплоя одного стенда запускать нельзя: блокировки state пока нет (решить на Т10).
+- Одновременно два деплоя одного стенда запускать нельзя: блокировки state нет, а очереди запусков у CI SourceCraft тоже нет (см. «CI»).
+
+## CI
+
+Конфигурация — `.sourcecraft/ci.yaml`, скрипты для воркера — `deploy/ci/`.
+
+| Событие | Workflow | Что делает |
+| --- | --- | --- |
+| pull request в `main` | `checks` | gitleaks, `task lint`, `buf breaking`, тесты с покрытием (Go с `-race`, TS), контрактные тесты на `local-ydb`, сборка фронтенда (размер бандла) и образа, `task audit` (не блокирует) |
+| push в `main` | `staging` | проверка ветки, те же проверки без сборки и audit, `task deploy ENV=staging`, хэш сборки фронтенда, push `main` на GitHub |
+| тег `v*` | `prod` | проверка «коммит тега есть в `main`», `task deploy ENV=prod`, хэш сборки, push тега на GitHub |
+
+- Вход в облако — через **сервисные подключения** SourceCraft: CI получает IAM-токен `sa-deploy-<стенд>` на время запуска. Ключей сервисных аккаунтов в секретах нет.
+- `Taskfile.yml` берёт токен из `YC_IAM_TOKEN`, если переменная задана (CI), иначе из `yc iam create-token` (ПК).
+- Инструменты ставит `deploy/ci/setup.sh`: версии и контрольные суммы зафиксированы в нём. Кэша между запусками нет.
+- Встроенного зеркала из SourceCraft в GitHub нет (есть только синхронизация в обратную сторону), поэтому зеркало — `git push` с токеном GitHub (`deploy/ci/mirror.sh`).
+- Триггеры срабатывают, только когда `.sourcecraft/ci.yaml` уже лежит в `main`. Поэтому первый pull request с этим файлом проверки не запустит, а его слияние сразу выкатит `staging`.
+
+### Что настроить один раз
+
+**1. Права `sa-deploy-*`** — роль `admin` на свой каталог (решение от 16.11.2026):
+
+```
+yc resource-manager folder add-access-binding staging --role admin --subject serviceAccount:<ID sa-deploy-staging>
+yc resource-manager folder add-access-binding prod --role admin --subject serviceAccount:<ID sa-deploy-prod>
+```
+
+ID аккаунта: `yc iam service-account get sa-deploy-staging --folder-name staging`.
+
+**2. Сервисные подключения** — в репозитории SourceCraft: настройки → сервисные подключения → создать два:
+
+| Имя (как в `ci.yaml`) | Каталог | Сервисный аккаунт | Область |
+| --- | --- | --- | --- |
+| `coffeechat-staging` | `staging` | `sa-deploy-staging` | репозиторий `coffeechat`, ветка `main` |
+| `coffeechat-prod` | `prod` | `sa-deploy-prod` | репозиторий `coffeechat`; если интерфейс позволяет ограничить тегами — `v*` |
+
+SourceCraft сам создаёт в облаке федерацию удостоверений для каждого подключения.
+
+**3. Секреты репозитория** — настройки → секреты:
+
+| Секрет | Значение |
+| --- | --- |
+| `STAGING_TFSTATE_KEY_ID` | `AWS_ACCESS_KEY_ID` из `.secrets/staging.env` |
+| `STAGING_TFSTATE_SECRET` | `AWS_SECRET_ACCESS_KEY` из `.secrets/staging.env` |
+| `PROD_TFSTATE_KEY_ID` | `AWS_ACCESS_KEY_ID` из `.secrets/prod.env` |
+| `PROD_TFSTATE_SECRET` | `AWS_SECRET_ACCESS_KEY` из `.secrets/prod.env` |
+| `GH_MIRROR_TOKEN` | токен GitHub для зеркала (ниже) |
+
+**4. Токен GitHub.** github.com → Settings → Developer settings → Fine-grained tokens → Generate:
+
+- Repository access: Only select repositories → `KiraFlamov/CoffeeChat`.
+- Permissions → Repository → Contents: **Read and write**. Остальное не нужно.
+- Срок жизни — не больше года; перед истечением выпустить новый и заменить секрет.
+- Если в репозитории на GitHub уже есть коммиты (README при создании), первый push отклонится. Тогда один раз с ПК: `git push --force https://github.com/KiraFlamov/CoffeeChat.git main`.
+
+### Проверка (критерии Т10)
+
+1. Ветка с ошибкой линтера → pull request → workflow `checks` красный.
+2. Слияние в `main` → `staging` выкатился без ручных шагов; в логе кубика `deploy` — хэш сборки фронтенда; коммит появился на GitHub.
+3. `git tag v0.0.1 && git push origin v0.0.1` → `prod` выкатился с тем же коммитом.
+4. Тег на коммит не из `main` → кубик `check-ref` красный, деплоя нет.
+
+### Ограничения
+
+- Очереди нет: следующий PR сливать и следующий тег ставить после конца предыдущего деплоя.
+- Минуты: 1000 в месяц на организацию. Длительность запусков записать после первых прогонов в `docs/limits.md`.

@@ -78,6 +78,24 @@ tasks:
     cmds:
       - pnpm -r run test
 
+  test:cover:
+    desc: Тесты Go (с детектором гонок) и TypeScript с отчётом о покрытии (для CI, нужны Linux и компилятор C)
+    cmds:
+      - mkdir -p coverage
+      # У отдельной команды Task нет своего dir — переходим в каталог через cd.
+      - cd server && go test -race -coverprofile=../coverage/go.out ./...
+      # Сгенерированный код в общий процент не входит: его никто не тестирует.
+      - grep -v '/gen/' coverage/go.out > coverage/go-own.out
+      - cd server && echo "Покрытие Go без gen/:" && go tool cover -func=../coverage/go-own.out | tail -n 1
+      - pnpm -r run test --coverage.enabled --coverage.reporter=text-summary
+
+  audit:
+    desc: Проверка зависимостей на известные уязвимости (govulncheck и pnpm audit)
+    cmds:
+      - cd server && go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - cd deploy/image && go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - pnpm audit
+
   db:up:
     desc: Запустить локальную базу YDB в Docker
     preconditions:
@@ -158,6 +176,8 @@ tasks:
 
   # --- Облако. Все команды требуют имя стенда: ENV=staging или ENV=prod. ---
   # Нужны terraform, yc и файл .secrets/<стенд>.env (см. deploy/README.md).
+  # IAM-токен: на ПК — от yc (yc iam create-token), в CI — готовый из переменной
+  # YC_IAM_TOKEN (его выдаёт сервисное подключение SourceCraft, см. .sourcecraft/ci.yaml).
 
   deploy:
     desc: 'Выкатить стенд целиком: task deploy ENV=staging (APPROVE=-auto-approve — не спрашивать подтверждение)'
@@ -244,8 +264,8 @@ tasks:
     dir: deploy/terraform/envs/{{.ENV}}
     dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.env']
     env:
-      YC_TOKEN:
-        sh: yc iam create-token
+      YC_TOKEN: &iam_token
+        sh: 'if [ -n "$YC_IAM_TOKEN" ]; then echo "$YC_IAM_TOKEN"; else yc iam create-token; fi'
     cmds:
       - terraform {{.ARGS | default .CLI_ARGS}}
 
@@ -256,8 +276,7 @@ tasks:
     dir: deploy/terraform/envs/{{.ENV}}
     dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.env']
     env:
-      YC_TOKEN:
-        sh: yc iam create-token
+      YC_TOKEN: *iam_token
     cmds:
       - terraform output -raw deploy_env > ../../../../.secrets/{{.ENV}}.outputs.env
       - terraform output -raw web_env > ../../../../web/.env.{{.ENV}}.local
@@ -272,8 +291,7 @@ tasks:
     dir: deploy/image
     dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.outputs.env']
     env:
-      YC_TOKEN:
-        sh: yc iam create-token
+      YC_TOKEN: *iam_token
     cmds:
       - go run . -binary ../../server/bin/container -push "$IMAGE_REPOSITORY:{{.COMMIT}}"
 
@@ -284,8 +302,7 @@ tasks:
     dir: server
     dotenv: ['{{.ROOT_DIR}}/.secrets/{{.ENV}}.outputs.env']
     env:
-      YDB_ACCESS_TOKEN:
-        sh: yc iam create-token
+      YDB_ACCESS_TOKEN: *iam_token
     cmds:
       - go run ./cmd/admin migrate
 
