@@ -142,14 +142,17 @@ for tool in "$@"; do
 done
 
 echo "--- версии"
+# Не через head: head закрывает канал после первой строки, команда получает SIGPIPE,
+# и с pipefail скрипт падает (так упал CI 26.11.2026 на terraform version).
+# sed читает вывод целиком.
 for tool in "$@"; do
   case "$tool" in
     go) go version ;;
     node) echo "node $(node --version), pnpm $(pnpm --version)" ;;
     task) task --version ;;
-    golangci-lint) golangci-lint version | head -n 1 ;;
+    golangci-lint) golangci-lint version | sed -n 1p ;;
     gitleaks) echo "gitleaks $(gitleaks version)" ;;
-    terraform) terraform version | head -n 1 ;;
+    terraform) CHECKPOINT_DISABLE=1 terraform version | sed -n 1p ;;
     yc) yc version ;;
   esac
 done
