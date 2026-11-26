@@ -349,9 +349,22 @@ tasks:
   fmt:
     desc: Отформатировать код
     cmds:
-      - cmd: golangci-lint fmt ./...
-        dir: server
-      - cmd: golangci-lint fmt --config ../../server/.golangci.yml ./...
-        dir: deploy/image
+      # У отдельной команды Task нет своего dir (молча игнорируется) — каталог задают подзадачи.
+      - task: fmt:server
+      - task: fmt:image
       - pnpm exec prettier --write .
       - pnpm exec buf format --write
+
+  fmt:server:
+    desc: Отформатировать Go-код server/
+    internal: true
+    dir: server
+    cmds:
+      - golangci-lint fmt ./...
+
+  fmt:image:
+    desc: Отформатировать Go-код сборщика образа deploy/image/
+    internal: true
+    dir: deploy/image
+    cmds:
+      - golangci-lint fmt --config ../../server/.golangci.yml ./...
